@@ -120,7 +120,14 @@ func buildQuery(job config.JobConfig, scope filter.Filter, cursor checkpoint.Cur
 		if err != nil {
 			return "", nil, false, fmt.Errorf("reader.cursor.tie_breaker_column: %w", err)
 		}
-		args = append(args, cursor.Value, cursor.Tie)
+		// The predicate references the cursor value twice. PostgreSQL
+		// placeholders can be reused ($n passed once); MySQL consumes
+		// one argument per ?, so the value is bound twice.
+		if d.name == "mysql" {
+			args = append(args, cursor.Value, cursor.Value, cursor.Tie)
+		} else {
+			args = append(args, cursor.Value, cursor.Tie)
+		}
 		query.WriteString(fmt.Sprintf(" AND (%s > %s OR (%s = %s AND %s > %s))",
 			cursorColumn, d.paramAt(len(args)-1),
 			cursorColumn, d.paramAt(len(args)-1),
@@ -204,7 +211,13 @@ func buildIncrementalJoinedQuery(job config.JobConfig, scope filter.Filter, curs
 		if err != nil {
 			return "", nil, false, fmt.Errorf("reader.cursor.tie_breaker_column: %w", err)
 		}
-		args = append(args, cursor.Value, cursor.Tie)
+		// MySQL binds the twice-referenced cursor value twice; see
+		// buildQuery.
+		if d.name == "mysql" {
+			args = append(args, cursor.Value, cursor.Value, cursor.Tie)
+		} else {
+			args = append(args, cursor.Value, cursor.Tie)
+		}
 		query.WriteString(fmt.Sprintf(" AND (%s > %s OR (%s = %s AND %s > %s))",
 			cursorColumn, d.paramAt(len(args)-1),
 			cursorColumn, d.paramAt(len(args)-1),
