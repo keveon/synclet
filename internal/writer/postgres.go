@@ -88,7 +88,7 @@ func (w *PostgresWriter) Write(ctx context.Context, job config.JobConfig, record
 	for _, record := range records {
 		args := make([]any, 0, len(stmts.columns))
 		for _, column := range stmts.columns {
-			args = append(args, formatArg(record.Fields[column], location))
+			args = append(args, formatArgPostgres(record.Fields[column], location))
 		}
 
 		if len(mergeSet) > 0 {

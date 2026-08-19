@@ -18,3 +18,4 @@ config.yaml
 /bin/
 *.test
 coverage.out
+state.json
