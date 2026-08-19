@@ -244,7 +244,18 @@ func (m ValueMapping) Resolve(row map[string]any) (any, bool, error) {
 	case "literal":
 		return normalizeValue(m.Value), true, nil
 	case "json_path":
-		return jsonpath.Get(row, m.Path)
+		value, ok, err := jsonpath.Get(row, m.Path)
+		if err != nil || !ok {
+			return value, ok, err
+		}
+		// Values destined for JSON documents must serialize natively:
+		// decode remaining []byte scalars (MySQL VARCHAR/DECIMAL) into
+		// json.Number or string so encoding/json never base64s them.
+		switch value.(type) {
+		case map[string]any, []any:
+			return normalizeJSONScalars(value), true, nil
+		}
+		return value, true, nil
 	case "json_object":
 		out := make(map[string]any, len(m.Fields))
 		for key, nested := range m.Fields {
@@ -442,7 +453,15 @@ func NormalizeMap(row map[string]any) map[string]any {
 func normalizeValue(value any) any {
 	switch typed := value.(type) {
 	case []byte:
-		return normalizeJSONBytes(typed)
+		// MySQL delivers VARCHAR/DECIMAL columns as []byte too; only
+		// object/array documents are JSON — bare scalars (numbers,
+		// quoted strings) must keep their byte identity so column
+		// mappings preserve string types.
+		trimmed := bytes.TrimSpace(typed)
+		if json.Valid(trimmed) && (bytes.HasPrefix(trimmed, []byte("{")) || bytes.HasPrefix(trimmed, []byte("["))) {
+			return normalizeJSONBytes(trimmed)
+		}
+		return typed
 	case string:
 		trimmed := strings.TrimSpace(typed)
 		if json.Valid([]byte(trimmed)) && (strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")) {
@@ -455,6 +474,44 @@ func normalizeValue(value any) any {
 		out := make([]any, len(typed))
 		for i, v := range typed {
 			out[i] = normalizeValue(v)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+// normalizeJSONScalars recursively converts []byte leaves of a decoded
+// JSON document into json.Number or string so encoding/json serializes
+// them as JSON scalars instead of base64.
+func normalizeJSONScalars(value any) any {
+	switch typed := value.(type) {
+	case []byte:
+		trimmed := bytes.TrimSpace(typed)
+		if trimmed == nil {
+			return nil
+		}
+		if json.Valid(trimmed) && !bytes.HasPrefix(trimmed, []byte("{")) && !bytes.HasPrefix(trimmed, []byte("[")) {
+			decoder := json.NewDecoder(bytes.NewReader(trimmed))
+			decoder.UseNumber()
+			var scalar any
+			if err := decoder.Decode(&scalar); err == nil {
+				return scalar
+			}
+		}
+		return string(typed)
+	case string:
+		return typed
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, v := range typed {
+			out[key] = normalizeJSONScalars(v)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, v := range typed {
+			out[i] = normalizeJSONScalars(v)
 		}
 		return out
 	default:

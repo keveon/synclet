@@ -74,13 +74,45 @@ func formatDateTime(value time.Time, location *time.Location) string {
 	return value.In(location).Format("2006-01-02 15:04:05.000")
 }
 
-// formatArg converts a mapped value into a driver argument.
+// formatArg converts a mapped value into a driver argument for MySQL:
+// DATETIME columns have no zone, so time values are rendered as local
+// literals in the configured writer timezone.
 func formatArg(value any, location *time.Location) any {
 	switch typed := value.(type) {
 	case nil:
 		return nil
 	case time.Time:
 		return formatDateTime(typed, location)
+	case decimal.Decimal:
+		return typed.String()
+	case *decimal.Decimal:
+		if typed == nil {
+			return nil
+		}
+		return typed.String()
+	case json.Number:
+		return typed.String()
+	case map[string]any, []any:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return "{}"
+		}
+		return string(data)
+	default:
+		return typed
+	}
+}
+
+// formatArgPostgres converts a mapped value into a driver argument for
+// PostgreSQL: time.Time passes through natively so pgx encodes the exact
+// instant into timestamptz — rendering local-literal strings here would
+// re-interpret them in the server session zone and shift the value.
+func formatArgPostgres(value any, _ *time.Location) any {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case time.Time:
+		return typed
 	case decimal.Decimal:
 		return typed.String()
 	case *decimal.Decimal:
