@@ -1,0 +1,183 @@
+# Lightweight DB polling -> DB upsert example config.
+# The example uses a PostgreSQL source and a MySQL target; adjust tables,
+# columns and mappings to your environment.
+# Credentials reference environment variable names only — never real
+# DSNs, passwords or tokens in this file.
+
+connections:
+  source:
+    type: postgres
+    dsn_env: SOURCE_DSN
+
+  target:
+    type: mysql
+    dsn_env: TARGET_DSN
+
+checkpoint:
+  type: file
+  # Atomically-written JSON state file. FHS default: /var/lib/synclet/state.json
+  # (for a local trial, point this at a writable directory instead).
+  path: /var/lib/synclet/state.json
+
+sync:
+  poll_interval: 30s
+  batch_size: 500
+
+scope:
+  # Fail-closed: syncing everything requires an explicit allow_all: true.
+  allow_all: false
+  allowed_codes:
+    - "C001"
+    - "C002"
+
+jobs:
+  - name: customers
+    mode: snapshot
+    reader:
+      connection: source
+      table: customers
+      columns:
+        - code
+        - name
+        - region
+        - metadata
+        - updated_at
+      filters:
+        - column: enabled
+          op: eq
+          value: true
+        - column: code
+          op: in
+          values_from: scope.allowed_codes
+      order_by:
+        - code
+
+    mapping:
+      fields:
+        customer_code:
+          type: column
+          column: code
+        customer_name:
+          type: column
+          column: name
+          default: ""
+        tier:
+          type: json_path
+          path: $.metadata.tier_code
+          required: true
+        region:
+          type: column
+          column: region
+        source_system:
+          type: literal
+          value: erp
+        updated_at:
+          type: column
+          column: updated_at
+        extra:
+          type: json_object
+          fields:
+            tier_code:
+              type: json_path
+              path: $.metadata.tier_code
+              required: true
+            tier_name:
+              type: json_path
+              path: $.metadata.tier_name
+
+    writer:
+      connection: target
+      table: customers
+      key_columns:
+        - customer_code
+      update_columns:
+        - customer_name
+        - tier
+        - region
+        - source_system
+        - updated_at
+        - extra
+      json_merge_patch_columns:
+        - extra
+      timezone: UTC
+
+  - name: orders
+    mode: incremental
+    reader:
+      connection: source
+      table: orders
+      alias: o
+      columns:
+        - o.id
+        - o.customer_id
+        - o.ordered_at
+        - o.submitted_at
+        - o.attributes
+        # Weight kind and tare come from the customer master record.
+        - c.metadata
+      joins:
+        - type: left
+          table: customers
+          alias: c
+          on:
+            left: o.customer_id
+            right: c.code
+      cursor:
+        # Unqualified cursor columns are qualified to the primary alias.
+        column: submitted_at
+        tie_breaker_column: id
+      filters:
+        - column: o.status
+          op: eq
+          value: confirmed
+        - column: o.customer_id
+          op: in
+          values_from: scope.allowed_codes
+      batch_size: 500
+
+    mapping:
+      fields:
+        customer_code:
+          type: column
+          column: customer_id
+        ordered_at:
+          type: column
+          column: ordered_at
+        shipping_weight:
+          # Selectors try paths in order; the first numeric value wins.
+          selectors:
+            - type: json_path
+              path: $.attributes.weight
+            - type: json_path
+              path: $.attributes.parcel_weight
+          transforms:
+            # Fail on unknown weight kinds instead of guessing.
+            - type: require_column_in
+              column: metadata.weight_kind
+              values: [net, gross]
+            # net + tare => gross shipping weight; gross passes through.
+            - type: add_column
+              column: metadata.tare_weight
+              when:
+                column: metadata.weight_kind
+                equals: net
+        extra:
+          type: json_object
+          fields:
+            submitted_at:
+              type: column
+              column: submitted_at
+
+    writer:
+      connection: target
+      table: orders
+      key_columns:
+        - customer_code
+        - ordered_at
+      update_columns:
+        - shipping_weight
+        - extra
+      null_update_policy: keep_existing
+      json_merge_patch_columns:
+        - extra
+      timezone: UTC

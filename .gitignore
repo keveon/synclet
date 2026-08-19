@@ -1,0 +1,20 @@
+/.idea/
+/.vscode/
+/.cache/
+
+# Local config and credentials.
+.env
+.env.*
+*.secret
+*.pem
+*.key
+config.yaml
+
+# Runtime state (local trials).
+/data/
+*.state.tmp
+
+# Go build/test output.
+/bin/
+*.test
+coverage.out
