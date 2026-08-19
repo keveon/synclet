@@ -9,6 +9,4 @@
 //   - incremental mode pages by composite (cursor, tie_breaker) keyset;
 //     JOINs apply after the fact batch is selected so LIMIT never truncates
 //     expanded rows.
-//
-// Not implemented yet: skeleton stage.
 package reader

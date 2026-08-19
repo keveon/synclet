@@ -9,6 +9,4 @@
 //   - loop mode schedules rounds by poll_interval and handles signals;
 //   - emits a structured ErrorSummary (job + stage) without leaking
 //     sensitive detail.
-//
-// Not implemented yet: skeleton stage.
 package engine

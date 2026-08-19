@@ -7,6 +7,4 @@
 //     NO_COLOR as an override;
 //   - never logs DSNs, SQL parameters, checkpoint values or business
 //     payloads.
-//
-// Not implemented yet: skeleton stage.
 package logging

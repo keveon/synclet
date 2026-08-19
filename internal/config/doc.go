@@ -6,6 +6,4 @@
 //     never literal DSNs;
 //   - validates the reader/mapping/writer contract of every job and fails
 //     closed: an empty scope without an explicit allow_all is a config error.
-//
-// Not implemented yet: skeleton stage.
 package config

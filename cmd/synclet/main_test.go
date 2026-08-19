@@ -3,9 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"testing"
+
+	"github.com/keveon/synclet/internal/config"
 )
 
 func TestParseOptionsDefaults(t *testing.T) {
@@ -75,17 +76,20 @@ func TestParseOptionsRejectsUnknownPositionalAndMissingValues(t *testing.T) {
 
 func TestRunHelpSucceedsAndPrintsUsage(t *testing.T) {
 	var buf bytes.Buffer
-	if err := run(context.Background(), options{showHelp: true}, &buf); err != nil {
+	if err := run(context.Background(), options{showHelp: true}, &buf, &buf); err != nil {
 		t.Fatalf("--help must not fail: %v", err)
 	}
 	if !strings.Contains(buf.String(), "Usage:") {
 		t.Error("--help must print usage")
 	}
+	if strings.Contains(buf.String(), "Only long options") {
+		t.Error("usage must not carry implementation notes")
+	}
 }
 
 func TestRunVersionSucceeds(t *testing.T) {
 	var buf bytes.Buffer
-	if err := run(context.Background(), options{showVersion: true}, &buf); err != nil {
+	if err := run(context.Background(), options{showVersion: true}, &buf, &buf); err != nil {
 		t.Fatalf("--version error = %v", err)
 	}
 	if !strings.Contains(buf.String(), "synclet") {
@@ -93,10 +97,36 @@ func TestRunVersionSucceeds(t *testing.T) {
 	}
 }
 
-func TestRunSyncReturnsNotImplemented(t *testing.T) {
-	var buf bytes.Buffer
-	err := run(context.Background(), options{configPath: "config.yaml"}, &buf)
-	if !errors.Is(err, errNotImplemented) {
-		t.Fatalf("run on skeleton should return errNotImplemented, got %v", err)
+func TestRunMissingConfigFails(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := run(context.Background(), options{configPath: "/nonexistent/synclet-test-config.yaml"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("run without a config must fail")
+	}
+	if !strings.Contains(err.Error(), "load config") {
+		t.Errorf("error should mention config loading, got %v", err)
+	}
+}
+
+func TestRequiredEnvRejectsInvalidNames(t *testing.T) {
+	if _, err := requiredEnv(""); err == nil {
+		t.Error("empty name must be rejected")
+	}
+	if _, err := requiredEnv("1BAD-NAME"); err == nil {
+		t.Error("invalid name must be rejected")
+	}
+	t.Setenv("SYNCLET_TEST_ENV", "")
+	if _, err := requiredEnv("SYNCLET_TEST_ENV"); err == nil {
+		t.Error("unset/empty variable must be rejected")
+	}
+}
+
+func TestConnectionNamesRequireConsistency(t *testing.T) {
+	jobs := []config.JobConfig{
+		{Reader: config.ReaderConfig{Connection: "source"}, Writer: config.WriterConfig{Connection: "target"}},
+		{Reader: config.ReaderConfig{Connection: "other"}, Writer: config.WriterConfig{Connection: "target"}},
+	}
+	if _, _, err := connectionNames(jobs); err == nil {
+		t.Error("mixed reader connections must be rejected")
 	}
 }
