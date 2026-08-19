@@ -7,6 +7,4 @@
 //   - json_merge_patch_columns merge instead of overwriting;
 //   - DATETIME values are written as local literals per writer timezone;
 //   - distinguishes attempted/inserted/updated/unchanged in write stats.
-//
-// Not implemented yet: skeleton stage.
 package writer

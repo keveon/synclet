@@ -4,27 +4,27 @@ This file is for AI coding agents (and future contributors). It describes the re
 
 ## Repository status
 
-**Skeleton stage.** The package layout and contracts are in place; the sync engine is not implemented yet:
+Core engine implemented. The reader -> mapping -> writer pipeline, checkpoints, loop scheduling and the CLI are functional:
 
-- `cmd/synclet/main.go`: CLI entrypoint — strict long-option parsing (`--config`, `--once`, `--version`, `--help`; single-dash forms are rejected, `--help` exits 0); sync paths return `errNotImplemented` instead of silently no-op'ing.
-- `internal/*/doc.go`: per-package contract docs (see the package map below); implementations land in follow-up commits.
+- `cmd/synclet/main.go`: CLI entrypoint — strict long-option parsing (`--config`, `--once`, `--version`, `--help`; single-dash forms are rejected, `--help` exits 0).
+- `internal/*`: per-package implementations (see the package map below); each package's `doc.go` is the authoritative contract description.
 - `config.example.yaml`: the full config contract (two jobs: snapshot `customers` + incremental `orders`).
 
 ## Package map
 
 ```text
-cmd/synclet          CLI entrypoint: option parsing, version
+cmd/synclet          CLI entrypoint: option parsing, wiring, version
 internal/engine      sync engine: orchestrates reader -> mapping -> writer
-internal/reader      read-only source polling (structured SQL, restricted JOINs, composite-cursor increments)
+internal/reader      read-only source polling, PostgreSQL + MySQL
 internal/mapping     field mapping (column/literal/json_path/json_object/selector) + transforms
-internal/writer      idempotent target writes (upsert, null policy, JSON merge patch, write stats)
+internal/writer      idempotent target writes, PostgreSQL + MySQL
 internal/checkpoint  incremental cursor persistence (atomic writes, advances only after success)
 internal/config      YAML config loading and validation (fail-closed)
-internal/filter      filter value sources (values_from, e.g. scope.allowed_codes)
+internal/filter      scope allowlist resolution (values_from: scope.allowed_codes)
 internal/jsonpath    restricted dot-path evaluation
 internal/redact      log/error redaction
 internal/logging     structured event logging
-internal/dbutil      identifier validation and SQL helpers
+internal/dbutil      identifier validation, SQL and DSN helpers
 internal/model       shared core types
 config.example.yaml  example configuration (deployed to /etc/synclet/config.yaml)
 ```

@@ -7,6 +7,4 @@
 //   - ordered transforms (negative_to_zero, require_column_in, add_column);
 //     decimal arithmetic goes through decimal — floats are rejected as
 //     inexact.
-//
-// Not implemented yet: skeleton stage.
 package mapping

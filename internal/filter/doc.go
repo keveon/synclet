@@ -5,6 +5,4 @@
 //     sets for reader `in` filters;
 //   - fail-closed by default: without an explicit allow_all, syncing
 //     everything is rejected.
-//
-// Not implemented yet: skeleton stage.
 package filter

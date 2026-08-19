@@ -6,6 +6,4 @@
 //   - map-key traversal only — no wildcards, filter expressions or bracket
 //     syntax;
 //   - used by mapping json_path fields and selectors.
-//
-// Not implemented yet: skeleton stage.
 package jsonpath
