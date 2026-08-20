@@ -44,6 +44,29 @@ go run ./cmd/synclet --config config.yaml
 
 `synclet --help` lists all options. The full configuration contract — snapshot + incremental jobs, restricted joins, mapping types and transforms — lives in [`config.example.yaml`](config.example.yaml).
 
+# Container image
+
+Multi-platform images (linux/amd64 + linux/arm64) are published to GHCR for every release tag:
+
+```bash
+docker run --rm ghcr.io/keveon/synclet --version
+```
+
+Run with a mounted config and env-based credentials (see `config.example.yaml` for the full contract):
+
+```bash
+docker run --rm \
+  -v $PWD/config.yaml:/etc/synclet/config.yaml:ro \
+  -v synclet-data:/var/lib/synclet \
+  --env-file .env \
+  ghcr.io/keveon/synclet --once
+```
+
+Notes:
+
+- The container runs as a dedicated non-root user (uid 65532); bind-mounted checkpoint directories need `chown 65532:65532` on the host.
+- Build locally from the repository root: `docker build -t synclet:dev .`
+
 ## Runtime paths
 
 Deployed runtimes follow the Filesystem Hierarchy Standard:

@@ -44,6 +44,29 @@ go run ./cmd/synclet --config config.yaml
 
 `synclet --help` 列出全部选项。完整配置契约——snapshot + incremental 两个 job、受限 JOIN、映射类型与 transforms——见 [`config.example.yaml`](config.example.yaml)。
 
+## 容器镜像
+
+每个 release tag 都会发布多平台镜像（linux/amd64 + linux/arm64）到 GHCR：
+
+```bash
+docker run --rm ghcr.io/keveon/synclet --version
+```
+
+挂载配置 + 环境变量传凭据运行（完整契约见 `config.example.yaml`）：
+
+```bash
+docker run --rm \
+  -v $PWD/config.yaml:/etc/synclet/config.yaml:ro \
+  -v synclet-data:/var/lib/synclet \
+  --env-file .env \
+  ghcr.io/keveon/synclet --once
+```
+
+说明：
+
+- 容器以专用非 root 用户（uid 65532）运行；bind mount 的 checkpoint 目录需在宿主机 `chown 65532:65532`。
+- 从仓库根目录本地构建：`docker build -t synclet:dev .`
+
 ## 运行时路径
 
 部署运行时遵循 FHS（Filesystem Hierarchy Standard）：

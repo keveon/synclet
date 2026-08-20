@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+.dockerignore
+Dockerfile
+AGENTS.md
+CLAUDE.md
+LICENSE
+README.md
+README.zh-CN.md
+config.yaml
+*.local.yaml
