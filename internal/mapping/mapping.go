@@ -49,10 +49,14 @@ type Condition struct {
 }
 
 // SourceSelector tries source paths in order; the first resolvable value
-// wins.
+// wins. json_path selectors evaluate a rooted dot path; element selectors
+// locate an entry by its `code` key inside the array found at `path` and
+// then resolve `value_path` relative to that entry.
 type SourceSelector struct {
-	Type string `yaml:"type"`
-	Path string `yaml:"path"`
+	Type      string `yaml:"type"`
+	Path      string `yaml:"path"`
+	Code      string `yaml:"code"`
+	ValuePath string `yaml:"value_path"`
 }
 
 // Mapper maps source rows to target records.
@@ -201,6 +205,17 @@ func (s SourceSelector) Validate() error {
 	case "json_path":
 		if _, err := jsonpath.Parse(s.Path); err != nil {
 			return fmt.Errorf("path: %w", err)
+		}
+		return nil
+	case "element":
+		if _, err := jsonpath.Parse(s.Path); err != nil {
+			return fmt.Errorf("path: %w", err)
+		}
+		if strings.TrimSpace(s.Code) == "" {
+			return fmt.Errorf("code is required")
+		}
+		if _, err := jsonpath.ParseRelative(s.ValuePath); err != nil {
+			return fmt.Errorf("value_path: %w", err)
 		}
 		return nil
 	default:
@@ -433,9 +448,58 @@ func (m ValueMapping) resolveSelector(payload map[string]any) (any, bool, error)
 			if parsed, ok := decimalValue(value); ok {
 				return parsed, true, nil
 			}
+		case "element":
+			value, ok, err := resolveElementSelector(payload, selector)
+			if err != nil {
+				return nil, false, err
+			}
+			if !ok || value == nil {
+				continue
+			}
+			if m.requiresExactDecimal() {
+				switch value.(type) {
+				case float32, float64:
+					return nil, false, fmt.Errorf("selector value must be an exact decimal")
+				}
+				if parsed, ok := ExactDecimalValue(value); ok {
+					return parsed, true, nil
+				}
+				continue
+			}
+			if parsed, ok := decimalValue(value); ok {
+				return parsed, true, nil
+			}
 		default:
 			return nil, false, fmt.Errorf("unsupported selector type %q", selector.Type)
 		}
+	}
+	return nil, false, nil
+}
+
+// resolveElementSelector locates the first array entry whose `code` key
+// matches and resolves value_path relative to that entry. A missing path
+// or an entry without the requested code falls through; a present but
+// non-array path is a configuration error and fails closed.
+func resolveElementSelector(payload map[string]any, selector SourceSelector) (any, bool, error) {
+	source, ok, err := jsonpath.Get(payload, selector.Path)
+	if err != nil || !ok || source == nil {
+		return nil, false, err
+	}
+	entries, ok := source.([]any)
+	if !ok {
+		return nil, false, fmt.Errorf("element selector path %q must point at an array", selector.Path)
+	}
+	code := strings.TrimSpace(selector.Code)
+	for _, entry := range entries {
+		object, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		entryCode, ok := StringValue(object["code"])
+		if !ok || entryCode != code {
+			continue
+		}
+		return jsonpath.GetRelative(object, selector.ValuePath)
 	}
 	return nil, false, nil
 }
