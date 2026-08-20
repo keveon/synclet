@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/go-sql-driver/mysql v1.10.0
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/shopspring/decimal v1.4.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
