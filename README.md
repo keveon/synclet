@@ -81,7 +81,7 @@ Deployed runtimes follow the Filesystem Hierarchy Standard:
 
 - [x] CLI, configuration contract, CI
 - [x] Core sync engine: reader -> mapping -> writer, checkpoints, scheduling
-- [ ] First release: version tag and container image
+- [x] First release: version tag and container image
 
 ## Principles
 

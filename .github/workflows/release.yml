@@ -50,7 +50,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: false
-          generate_release_note: true
+          generate_release_notes: true
           body: |
             ## Container image
 
@@ -62,6 +62,7 @@ jobs:
 
             ## What to know
 
-            - Credentials never touch config files — connections reference environment variable names (`connections.*.dsn_env`).
+            - PostgreSQL and MySQL as source and target, in any direction (including mixed pairings).
+            - Credentials never touch config files — connections reference environment variable names (`connections.*.dsn_env`); the full config contract lives in [`config.example.yaml`](https://github.com/keveon/synclet/blob/main/config.example.yaml).
             - The container runs as a non-root user (uid 65532); bind-mounted checkpoint directories need `chown 65532:65532` on the host.
             - FHS runtime paths: config `/etc/synclet/config.yaml`, checkpoint state `/var/lib/synclet/state.json`.

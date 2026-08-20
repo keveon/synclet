@@ -81,7 +81,7 @@ docker run --rm \
 
 - [x] CLI、配置契约、CI
 - [x] 核心同步引擎：reader -> mapping -> writer、checkpoint、调度
-- [ ] 首个版本发布：版本 tag 与容器镜像
+- [x] 首个版本发布：版本 tag 与容器镜像
 
 ## 原则
 
