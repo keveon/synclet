@@ -18,7 +18,7 @@ source 数据库 -> 读取 -> 映射 -> upsert -> target 数据库
 - **不接受任意 SQL**：读取由结构化配置（`table`、`columns`、`joins`、`filters`、`cursor`）生成，identifier 全部校验；JOIN 仅限 inner/left 等值关联。
 - **两种同步模式**：`snapshot`（每轮全量拉取 + upsert，适合基础表）与 `incremental`（`cursor + tie_breaker` 复合游标分页，适合事实表）。
 - **不静默漏数**：`(cursor, tie_breaker)` 复合游标规避同时间戳组漏同步；checkpoint 仅在写入成功后推进。
-- **字段映射**：`column / literal / json_path / json_object / selector` 五种类型，支持 `required` 与 `default`；transforms 按配置顺序执行，十进制运算精确——浮点值会被拒绝，而不是伪装成精确值。selector 有两种：`json_path`（从根出发的点分路径）与 `element`（按 `code` 键在数组中挑选条目，再在条目内求 `value_path`）。
+- **字段映射**：`column / literal / json_path / json_object / selector` 五种类型，支持 `required` 与 `default`；transforms 按配置顺序执行，十进制运算精确——浮点值会被拒绝，而不是伪装成精确值。selector 有两种：`json_path`（从根出发的点分路径）与 `element`（按 `code` 解析条目——支持以 code 为键的对象，或每项带 code 键的数组——再在条目内求 `value_path`）。
 - **幂等写入与统计**：按 key 列 upsert，`null_update_policy: keep_existing`，JSON merge patch 列；日志区分 `attempted / inserted / updated / unchanged`。
 - **fail closed**：不完整或有歧义的配置直接报错——空 allowlist 且未显式 `allow_all: true` 时拒绝运行。
 - **可观测、可放心记日志**：结构化、可 grep 的事件日志；DSN、token 与 URL userinfo 自动脱敏。

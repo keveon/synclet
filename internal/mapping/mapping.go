@@ -476,32 +476,41 @@ func (m ValueMapping) resolveSelector(payload map[string]any) (any, bool, error)
 	return nil, false, nil
 }
 
-// resolveElementSelector locates the first array entry whose `code` key
-// matches and resolves value_path relative to that entry. A missing path
+// resolveElementSelector locates the entry for a code and resolves
+// value_path relative to that entry. Two source shapes are supported:
+// an object keyed by code (entry looked up directly) and an array of
+// entries each carrying a `code` key. A missing path, a missing code,
 // or an entry without the requested code falls through; a present but
-// non-array path is a configuration error and fails closed.
+// non-collection path is a configuration error and fails closed.
 func resolveElementSelector(payload map[string]any, selector SourceSelector) (any, bool, error) {
 	source, ok, err := jsonpath.Get(payload, selector.Path)
 	if err != nil || !ok || source == nil {
 		return nil, false, err
 	}
-	entries, ok := source.([]any)
-	if !ok {
-		return nil, false, fmt.Errorf("element selector path %q must point at an array", selector.Path)
-	}
 	code := strings.TrimSpace(selector.Code)
-	for _, entry := range entries {
-		object, ok := entry.(map[string]any)
-		if !ok {
-			continue
+	switch typed := source.(type) {
+	case map[string]any:
+		entry, ok := typed[code]
+		if !ok || entry == nil {
+			return nil, false, nil
 		}
-		entryCode, ok := StringValue(object["code"])
-		if !ok || entryCode != code {
-			continue
+		return jsonpath.GetRelative(entry, selector.ValuePath)
+	case []any:
+		for _, entry := range typed {
+			object, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			entryCode, ok := StringValue(object["code"])
+			if !ok || entryCode != code {
+				continue
+			}
+			return jsonpath.GetRelative(object, selector.ValuePath)
 		}
-		return jsonpath.GetRelative(object, selector.ValuePath)
+		return nil, false, nil
+	default:
+		return nil, false, fmt.Errorf("element selector path %q must point at an array or an object keyed by code", selector.Path)
 	}
-	return nil, false, nil
 }
 
 // NormalizeMap normalizes every value of a row for mapping: JSON bytes and
