@@ -243,3 +243,73 @@ func TestStringValueCoversTypes(t *testing.T) {
 		t.Error("maps must not render")
 	}
 }
+
+func TestSelectorElementPicksValueByCode(t *testing.T) {
+	mapper, err := NewMapper(Config{Fields: map[string]ValueMapping{
+		"water_level": {Selectors: []SourceSelector{
+			{Type: "element", Path: "$.elements", Code: "39", ValuePath: "value"},
+			{Type: "element", Path: "$.elements", Code: "3a", ValuePath: "value"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := mapper.Map(model.SourceRow{"elements": []any{
+		map[string]any{"code": "36", "value": json.Number("1.25")},
+		map[string]any{"code": "39", "value": json.Number("12.5")},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decimalString(record.Fields["water_level"]); got != "12.5" {
+		t.Errorf("element selector = %s, want 12.5", got)
+	}
+}
+
+func TestSelectorElementFallsThroughToNext(t *testing.T) {
+	mapper, err := NewMapper(Config{Fields: map[string]ValueMapping{
+		"water_level": {Default: "", Selectors: []SourceSelector{
+			{Type: "element", Path: "$.elements", Code: "39", ValuePath: "value"},
+			{Type: "element", Path: "$.elements", Code: "3a", ValuePath: "value"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 没有 39 也没有 3a：整体落空 -> ok=false -> default 生效，不报错
+	record, err := mapper.Map(model.SourceRow{"elements": []any{
+		map[string]any{"code": "36", "value": json.Number("1.25")},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Fields["water_level"] != "" {
+		t.Errorf("miss must resolve to empty default, got %#v", record.Fields["water_level"])
+	}
+}
+
+func TestSelectorElementNonArrayIsError(t *testing.T) {
+	mapper, err := NewMapper(Config{Fields: map[string]ValueMapping{
+		"water_level": {Selectors: []SourceSelector{
+			{Type: "element", Path: "$.elements", Code: "39", ValuePath: "value"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// path 指到的不是数组：fail-closed，必须报错
+	if _, err := mapper.Map(model.SourceRow{"elements": map[string]any{"code": "39"}}); err == nil {
+		t.Error("non-array element source must fail")
+	}
+}
+
+func TestSelectorElementRequiresCodeAndValuePath(t *testing.T) {
+	_, err := NewMapper(Config{Fields: map[string]ValueMapping{
+		"water_level": {Selectors: []SourceSelector{
+			{Type: "element", Path: "$.elements"},
+		}},
+	}})
+	if err == nil {
+		t.Fatal("element selector without code/value_path must fail validation")
+	}
+}

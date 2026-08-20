@@ -145,11 +145,16 @@ jobs:
           column: ordered_at
         shipping_weight:
           # Selectors try paths in order; the first numeric value wins.
+          # element selectors pick an array entry by its code key.
           selectors:
             - type: json_path
               path: $.attributes.weight
             - type: json_path
               path: $.attributes.parcel_weight
+            - type: element
+              path: $.attributes.readings
+              code: GROSS
+              value_path: value
           transforms:
             # Fail on unknown weight kinds instead of guessing.
             - type: require_column_in
