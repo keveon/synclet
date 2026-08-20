@@ -297,9 +297,9 @@ func TestSelectorElementNonArrayIsError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// path 指到的不是数组：fail-closed，必须报错
-	if _, err := mapper.Map(model.SourceRow{"elements": map[string]any{"code": "39"}}); err == nil {
-		t.Error("non-array element source must fail")
+	// path 指到的是标量（非数组非对象）：fail-closed，必须报错
+	if _, err := mapper.Map(model.SourceRow{"elements": json.Number("42")}); err == nil {
+		t.Error("non-collection element source must fail")
 	}
 }
 
@@ -311,5 +311,65 @@ func TestSelectorElementRequiresCodeAndValuePath(t *testing.T) {
 	}})
 	if err == nil {
 		t.Fatal("element selector without code/value_path must fail validation")
+	}
+}
+
+func TestSelectorElementMapKeyedEntries(t *testing.T) {
+	mapper, err := NewMapper(Config{Fields: map[string]ValueMapping{
+		"water_level": {Selectors: []SourceSelector{
+			{Type: "element", Path: "$.elements", Code: "39", ValuePath: "value"},
+			{Type: "element", Path: "$.elements", Code: "3a", ValuePath: "value"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Axis 形态：elements 是以要素 code 为键的 JSON 对象
+	record, err := mapper.Map(model.SourceRow{"elements": map[string]any{
+		"36": map[string]any{"value": json.Number("1.25")},
+		"39": map[string]any{"value": json.Number("12.5")},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decimalString(record.Fields["water_level"]); got != "12.5" {
+		t.Errorf("map-keyed element selector = %s, want 12.5", got)
+	}
+}
+
+func TestSelectorElementMapMissFallsThrough(t *testing.T) {
+	mapper, err := NewMapper(Config{Fields: map[string]ValueMapping{
+		"water_level": {Default: "", Selectors: []SourceSelector{
+			{Type: "element", Path: "$.elements", Code: "39", ValuePath: "value"},
+			{Type: "element", Path: "$.elements", Code: "3a", ValuePath: "value"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// map 里没有请求的 code：落空走 default，不报错
+	record, err := mapper.Map(model.SourceRow{"elements": map[string]any{
+		"36": map[string]any{"value": json.Number("1.25")},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Fields["water_level"] != "" {
+		t.Errorf("map miss must resolve to empty default, got %#v", record.Fields["water_level"])
+	}
+}
+
+func TestSelectorElementNonArrayNonMapStillError(t *testing.T) {
+	mapper, err := NewMapper(Config{Fields: map[string]ValueMapping{
+		"water_level": {Selectors: []SourceSelector{
+			{Type: "element", Path: "$.elements", Code: "39", ValuePath: "value"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 既不是数组也不是对象：依旧是配置/数据形态错误
+	if _, err := mapper.Map(model.SourceRow{"elements": json.Number("42")}); err == nil {
+		t.Error("scalar element source must fail")
 	}
 }
