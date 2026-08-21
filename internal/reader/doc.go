@@ -7,6 +7,9 @@
 //   - JOINs are restricted: inner/left equi-joins; filter conditions
 //     reference the primary alias only;
 //   - incremental mode pages by composite (cursor, tie_breaker) keyset;
+//     the predicate keeps a sargable cursor >= conjunct so indexes can
+//     bound the scan at the cursor position;
 //     JOINs apply after the fact batch is selected so LIMIT never truncates
-//     expanded rows.
+//     expanded rows; the fact subquery projects only the selected base
+//     columns, never alias.*.
 package reader

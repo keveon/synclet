@@ -104,7 +104,7 @@ func TestBuildQueryIncrementalKeyset(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("build: %v ok=%t", err, ok)
 	}
-	if !strings.Contains(query, `("submitted_at" > $1 OR ("submitted_at" = $1 AND "id" > $2))`) {
+	if !strings.Contains(query, `("submitted_at" >= $1 AND ("submitted_at" > $1 OR ("submitted_at" = $1 AND "id" > $2)))`) {
 		t.Errorf("composite keyset predicate missing: %s", query)
 	}
 	if !strings.Contains(query, `ORDER BY "submitted_at" ASC, "id" ASC`) {
@@ -118,13 +118,54 @@ func TestBuildQueryIncrementalKeyset(t *testing.T) {
 	}
 }
 
+func TestBuildQueryIncrementalKeysetMySQLBindsCursorThrice(t *testing.T) {
+	job := config.JobConfig{
+		Name: "orders",
+		Mode: "incremental",
+		Reader: config.ReaderConfig{
+			Table:   "orders",
+			Columns: []string{"id", "submitted_at"},
+			Cursor:  config.CursorConfig{Column: "submitted_at", TieBreakerColumn: "id"},
+		},
+	}
+	cursor := checkpoint.Cursor{Value: time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC), Tie: int64(10)}
+	query, args, ok, err := BuildQueryForTest(job, filter.New(filter.Config{AllowAll: true}), cursor, 500, MySQLDialectForTest())
+	if err != nil || !ok {
+		t.Fatalf("build: %v ok=%t", err, ok)
+	}
+	if !strings.Contains(query, "(`submitted_at` >= ? AND (`submitted_at` > ? OR (`submitted_at` = ? AND `id` > ?)))") {
+		t.Errorf("sargable keyset predicate missing: %s", query)
+	}
+	// MySQL 按 ? 顺序逐个绑定：>= 出现 1 次、OR 内 > 与 = 各 1 次、tie 1 次、LIMIT 1 次。
+	if len(args) != 5 {
+		t.Fatalf("args = %v, want [cursor cursor cursor tie limit]", args)
+	}
+	for i := 0; i < 3; i++ {
+		if _, isTime := args[i].(time.Time); !isTime {
+			t.Errorf("args[%d] = %v (%T), want cursor time.Time", i, args[i], args[i])
+		}
+	}
+	if args[3] != int64(10) {
+		t.Errorf("tie arg = %v (%T), want int64(10)", args[3], args[3])
+	}
+	if args[4] != 500 {
+		t.Errorf("limit arg = %v, want 500", args[4])
+	}
+}
+
 func TestBuildQueryIncrementalJoinedSubquery(t *testing.T) {
 	query, _, ok, err := BuildQueryForTest(incrementalJoinedJob(), scopeFilter(), checkpoint.Cursor{}, 500, PostgresDialectForTest())
 	if err != nil || !ok {
 		t.Fatalf("build: %v ok=%t", err, ok)
 	}
-	if !strings.Contains(query, "FROM (SELECT \"o\".* FROM \"orders\" AS \"o\"") {
+	if !strings.Contains(query, `FROM (SELECT `) {
 		t.Errorf("fact subquery missing: %s", query)
+	}
+	if strings.Contains(query, `SELECT "o".*`) {
+		t.Errorf("fact subquery must project selected base columns, not %s: %s", `SELECT "o".*`, query)
+	}
+	if !strings.Contains(query, `SELECT "o"."id", "o"."customer_id", "o"."submitted_at" FROM`) {
+		t.Errorf("fact subquery must project base columns: %s", query)
 	}
 	if !strings.Contains(query, "LEFT JOIN \"customers\" AS \"c\"") {
 		t.Errorf("join missing: %s", query)

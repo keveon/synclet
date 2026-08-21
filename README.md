@@ -16,7 +16,7 @@ It polls a source database read-only — nothing to install on the source side �
 
 - **Credentials never touch config files**: connections reference environment variable names (`connections.*.dsn_env`) — no DSNs, passwords or tokens in YAML.
 - **No arbitrary SQL**: reads are built from structured config (`table`, `columns`, `joins`, `filters`, `cursor`) with every identifier validated; JOINs are restricted to inner/left equi-joins.
-- **Two sync modes**: `snapshot` (full pull + upsert each round, for reference tables) and `incremental` (composite `cursor + tie_breaker` keyset paging, for fact tables).
+- **Two sync modes**: `snapshot` (full pull + upsert each round, for reference tables) and `incremental` (composite `cursor + tie_breaker` keyset paging, for fact tables). The keyset predicate keeps a sargable `cursor >=` conjunct so source indexes can bound each poll at the cursor position.
 - **No silent row loss**: the composite `(cursor, tie_breaker)` cursor prevents same-timestamp groups from being skipped; the checkpoint advances only after a successful write.
 - **Field mapping**: `column / literal / json_path / json_object / selector` types with `required` and `default`; ordered transforms with exact decimal arithmetic — floats are rejected rather than masquerading as exact. Selectors come in two flavors: `json_path` (rooted dot path) and `element` (resolve an entry by its `code` — from a code-keyed object or an array of code-tagged entries — then resolve `value_path` inside it).
 - **Idempotent writes with stats**: upsert by key columns, `null_update_policy: keep_existing`, JSON merge-patch columns; logs distinguish `attempted / inserted / updated / unchanged`.

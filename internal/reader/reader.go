@@ -120,18 +120,7 @@ func buildQuery(job config.JobConfig, scope filter.Filter, cursor checkpoint.Cur
 		if err != nil {
 			return "", nil, false, fmt.Errorf("reader.cursor.tie_breaker_column: %w", err)
 		}
-		// The predicate references the cursor value twice. PostgreSQL
-		// placeholders can be reused ($n passed once); MySQL consumes
-		// one argument per ?, so the value is bound twice.
-		if d.name == "mysql" {
-			args = append(args, cursor.Value, cursor.Value, cursor.Tie)
-		} else {
-			args = append(args, cursor.Value, cursor.Tie)
-		}
-		query.WriteString(fmt.Sprintf(" AND (%s > %s OR (%s = %s AND %s > %s))",
-			cursorColumn, d.paramAt(len(args)-1),
-			cursorColumn, d.paramAt(len(args)-1),
-			tieColumn, d.paramAt(len(args))))
+		args = appendKeysetPredicate(&query, cursorColumn, tieColumn, cursor, args, d)
 	}
 
 	orderBy, err := buildOrderBy(readerCfg, job.CanonicalMode(), d)
@@ -170,12 +159,20 @@ func buildIncrementalJoinedQuery(job config.JobConfig, scope filter.Filter, curs
 		return "", nil, false, fmt.Errorf("reader.alias: %w", err)
 	}
 
+	projections, err := baseColumnProjections(readerCfg, d)
+	if err != nil {
+		return "", nil, false, err
+	}
+	if len(projections) == 0 {
+		return "", nil, false, fmt.Errorf("reader.columns must include at least one %q column for incremental joins", aliasName)
+	}
+
 	query := strings.Builder{}
 	query.WriteString("SELECT ")
 	query.WriteString(strings.Join(columns, ", "))
 	query.WriteString(" FROM (SELECT ")
-	query.WriteString(alias)
-	query.WriteString(".* FROM ")
+	query.WriteString(strings.Join(projections, ", "))
+	query.WriteString(" FROM ")
 	query.WriteString(table)
 	query.WriteString(" AS ")
 	query.WriteString(alias)
@@ -211,17 +208,7 @@ func buildIncrementalJoinedQuery(job config.JobConfig, scope filter.Filter, curs
 		if err != nil {
 			return "", nil, false, fmt.Errorf("reader.cursor.tie_breaker_column: %w", err)
 		}
-		// MySQL binds the twice-referenced cursor value twice; see
-		// buildQuery.
-		if d.name == "mysql" {
-			args = append(args, cursor.Value, cursor.Value, cursor.Tie)
-		} else {
-			args = append(args, cursor.Value, cursor.Tie)
-		}
-		query.WriteString(fmt.Sprintf(" AND (%s > %s OR (%s = %s AND %s > %s))",
-			cursorColumn, d.paramAt(len(args)-1),
-			cursorColumn, d.paramAt(len(args)-1),
-			tieColumn, d.paramAt(len(args))))
+		args = appendKeysetPredicate(&query, cursorColumn, tieColumn, cursor, args, d)
 	}
 
 	orderBy, err := buildOrderBy(readerCfg, "incremental", d)
@@ -249,6 +236,65 @@ func buildIncrementalJoinedQuery(job config.JobConfig, scope filter.Filter, curs
 	query.WriteString(orderBy)
 
 	return query.String(), args, true, nil
+}
+
+// appendKeysetPredicate appends the composite (cursor, tie_breaker) keyset
+// predicate and binds its arguments. The predicate is deliberately redundant:
+//
+//	(cursor >= $c AND (cursor > $c OR (cursor = $c AND tie > $t)))
+//
+// The bare OR form is semantically identical but is not sargable — without
+// the leading >= conjunct, planners cannot use the cursor boundary as an
+// index start condition and degrade to scanning (and discarding) every row
+// at or below the cursor on each poll.
+func appendKeysetPredicate(query *strings.Builder, cursorColumn, tieColumn string, cursor checkpoint.Cursor, args []any, d dialect) []any {
+	first := len(args) + 1
+	if d.name == "mysql" {
+		// MySQL consumes one argument per ?: >= once, then > and =
+		// inside the OR, then the tie breaker.
+		args = append(args, cursor.Value, cursor.Value, cursor.Value, cursor.Tie)
+	} else {
+		// PostgreSQL placeholders can be reused ($n passed once).
+		args = append(args, cursor.Value, cursor.Tie)
+	}
+	var cursorPlaceholders []string
+	if d.name == "mysql" {
+		cursorPlaceholders = []string{d.paramAt(first), d.paramAt(first + 1), d.paramAt(first + 2)}
+	} else {
+		cursorPlaceholders = []string{d.paramAt(first), d.paramAt(first), d.paramAt(first)}
+	}
+	tiePlaceholder := d.paramAt(len(args))
+
+	query.WriteString(" AND (")
+	query.WriteString(fmt.Sprintf("%s >= %s", cursorColumn, cursorPlaceholders[0]))
+	query.WriteString(" AND (")
+	query.WriteString(fmt.Sprintf("%s > %s", cursorColumn, cursorPlaceholders[1]))
+	query.WriteString(" OR ")
+	query.WriteString(fmt.Sprintf("(%s = %s AND %s > %s)",
+		cursorColumn, cursorPlaceholders[2], tieColumn, tiePlaceholder))
+	query.WriteString("))")
+	return args
+}
+
+// baseColumnProjections returns the quoted projection for the fact subquery
+// of an incremental joined read: only the selected columns that belong to the
+// base alias. Projecting alias.* would drag every table column (including
+// large unused payloads) through the batch scan for no benefit.
+func baseColumnProjections(readerCfg config.ReaderConfig, d dialect) ([]string, error) {
+	aliasName := strings.TrimSpace(readerCfg.Alias)
+	prefix := aliasName + "."
+	projections := make([]string, 0, len(readerCfg.Columns))
+	for _, column := range readerCfg.Columns {
+		if !strings.HasPrefix(column, prefix) {
+			continue
+		}
+		quoted, err := d.quote(column)
+		if err != nil {
+			return nil, fmt.Errorf("reader column %s: %w", column, err)
+		}
+		projections = append(projections, quoted)
+	}
+	return projections, nil
 }
 
 func appendJoins(query *strings.Builder, joins []config.JoinConfig, d dialect) error {
