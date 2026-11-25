@@ -3,7 +3,7 @@ module github.com/keveon/synclet
 go 1.26.0
 
 require (
-	github.com/go-sql-driver/mysql v1.10.0
+	github.com/go-sql-driver/mysql v1.10.2
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/shopspring/decimal v1.6.0
 	golang.org/x/term v0.47.0
